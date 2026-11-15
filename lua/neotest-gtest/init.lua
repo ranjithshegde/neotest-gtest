@@ -141,7 +141,6 @@ function GTestNeotestAdapter.discover_positions(file_path)
         vim.log.levels.WARN
       )
     else
-      utils.notify_clear("stale:" .. executable)
       local ok, names = pcall(inventory.list, executable)
 
       if not ok then
@@ -153,7 +152,6 @@ function GTestNeotestAdapter.discover_positions(file_path)
           vim.log.levels.WARN
         )
       else
-        utils.notify_clear("unavailable:" .. executable)
         local mapped = inventory.map_source(source_tree, names)
 
         for source_id in pairs(source_ids) do

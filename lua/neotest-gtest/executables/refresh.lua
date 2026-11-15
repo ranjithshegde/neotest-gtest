@@ -31,10 +31,8 @@ local function queue_refresh(directory, name)
   entry.generation = entry.generation + 1
   local generation = entry.generation
 
-  -- The binary changed, so its cached listing is stale. Rediscovery waits for
-  -- the debounce below, so a link in progress does not start listings.
-  inventory.invalidate(entry.executable)
-
+  -- Rediscovery waits for the debounce below, so a link in progress does not
+  -- start listings. A changed signature makes the listing cache miss on its own.
   vim.defer_fn(function()
     if not directory.closed and entry.generation == generation then
       rediscover_sources(entry.sources)

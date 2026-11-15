@@ -228,19 +228,5 @@ Custom/NamedFixture.
       assert.same({ "Suite.Recovered" }, inventory.list(executable))
       assert.equals(2, runs(counter))
     end)
-
-    it("drops the cached listing when invalidated", function()
-      nio.scheduler()
-
-      local executable = assert(vim.fn.tempname())
-      local counter = executable .. ".count"
-
-      write_counting_executable(executable, counter, "Suite.\n  Case\n")
-      inventory.list(executable)
-      inventory.invalidate(executable)
-      inventory.list(executable)
-
-      assert.equals(2, runs(counter))
-    end)
   end)
 end)

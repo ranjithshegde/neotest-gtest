@@ -29,12 +29,6 @@ function M.signature(executable)
   return string.format("%d:%d:%d", stat.size, stat.mtime.sec, stat.mtime.nsec)
 end
 
----Forget the cached listing for an executable, for example after a rebuild.
----@param executable string
-function M.invalidate(executable)
-  cache[executable] = nil
-end
-
 local function run_list(executable, timeout_ms)
   local result = run({ executable, "--gtest_list_tests" }, { text = true, timeout = timeout_ms })
 
