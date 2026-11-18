@@ -209,8 +209,22 @@ local function get_file_language(file_path)
 end
 
 -- Parsed positions per file, as plain lists, keyed by file path. An entry is
--- reused only while the file's content digest is unchanged.
+-- reused only while the file's size and mtime are unchanged.
+--
+-- This misses an edit that keeps both, such as a timestamp-preserving copy
+-- (`cp -p`, `rsync -t`, `touch -r`) of a same-sized file. Executable tracking
+-- relies on the same stat signature, so the two agree.
 local source_cache = {}
+
+---@param stat table? result of `fs_stat`
+---@return string? signature of the file's size and mtime
+local function stat_signature(stat)
+  if stat == nil then
+    return nil
+  end
+
+  return string.format("%d:%d:%d", stat.size, stat.mtime.sec, stat.mtime.nsec)
+end
 
 local function parse_source(file_path, content)
   local lang = get_file_language(file_path)
@@ -219,20 +233,28 @@ local function parse_source(file_path, content)
   return collect_tests(file_path, content, treesitter_tree)
 end
 
-local function parse_positions_from_string(file_path, content)
-  local digest = vim.fn.sha256(content)
+local function parse_positions_from_file(file_path)
+  -- Stat before reading: an edit between the two leaves an older signature on
+  -- newer content, which only costs one extra reparse next time.
+  local err, stat = nio.uv.fs_stat(file_path)
+  local signature = not err and stat_signature(stat) or nil
   local cached = source_cache[file_path]
 
-  if cached == nil or cached.digest ~= digest then
-    cached = { digest = digest, positions = parse_source(file_path, content) }
+  local stale = signature == nil or cached == nil or cached.signature ~= signature
+  local content = stale and files.read(file_path) or nil
+
+  -- Callers expect to be back on the main loop, on a hit as well as a miss.
+  nio.scheduler()
+
+  if stale then
+    cached = { signature = signature, positions = parse_source(file_path, content) }
     source_cache[file_path] = cached
   end
 
   -- Hand out a copy so that no caller can change what later calls return.
-  local neotest_tree = Tree.from_list(vim.deepcopy(cached.positions), function(pos)
+  return Tree.from_list(vim.deepcopy(cached.positions), function(pos)
     return pos.id
   end)
-  return neotest_tree
 end
 
 ---Add compiled cases to an already parsed source tree.
@@ -274,9 +296,7 @@ end
 function M.parse_positions(file_path, runtime_by_source)
   -- throttle: can cause very high CPU load for large projects and freeze
   nio.sleep(config.parsing_throttle_ms)
-  local content = files.read(file_path)
-  nio.scheduler()
-  local source_tree = parse_positions_from_string(file_path, content)
+  local source_tree = parse_positions_from_file(file_path)
   if runtime_by_source then
     return M.enrich_positions(source_tree, runtime_by_source)
   end

@@ -362,6 +362,52 @@ TYPED_TEST(TypedFixture, Works) {
       assert.is_true(vim.tbl_contains(ids_after_edit, fpath .. "::Cached::Added"))
     end)
 
+    it("does not read an unchanged file again", function()
+      local fpath = assert(vim.fn.tempname()) .. ".cpp"
+      lib.files.write(fpath, "TEST(Cached, First) {}\n")
+      parse_module.parse_positions(fpath)
+
+      local original_read = lib.files.read
+      local reads = 0
+      lib.files.read = function(...)
+        reads = reads + 1
+        return original_read(...)
+      end
+
+      local ok, err = pcall(parse_module.parse_positions, fpath)
+      lib.files.read = original_read
+
+      assert.is_true(ok, err)
+      assert.equals(0, reads)
+    end)
+
+    it("reparses a same-sized edit when the mtime changed", function()
+      local fpath = assert(vim.fn.tempname()) .. ".cpp"
+      lib.files.write(fpath, "TEST(Cached, First) {}\n")
+      parse_module.parse_positions(fpath)
+
+      lib.files.write(fpath, "TEST(Cached, Other) {}\n")
+      assert(vim.uv.fs_utime(fpath, 1000000, 1000000))
+      local ids_after_edit = ids(parse_module.parse_positions(fpath))
+
+      assert.is_true(vim.tbl_contains(ids_after_edit, fpath .. "::Cached::Other"))
+    end)
+
+    it("keeps the cached parse for a same-sized edit that preserves the mtime", function()
+      local fpath = assert(vim.fn.tempname()) .. ".cpp"
+      lib.files.write(fpath, "TEST(Cached, First) {}\n")
+      assert(vim.uv.fs_utime(fpath, 1000000, 1000000))
+      parse_module.parse_positions(fpath)
+
+      lib.files.write(fpath, "TEST(Cached, Other) {}\n")
+      assert(vim.uv.fs_utime(fpath, 1000000, 1000000))
+      local ids_after_edit = ids(parse_module.parse_positions(fpath))
+
+      -- Known gap of a stat signature, accepted in exchange for not reading or
+      -- hashing the file on every call.
+      assert.is_true(vim.tbl_contains(ids_after_edit, fpath .. "::Cached::First"))
+    end)
+
     it("does not let a caller change what later parses return", function()
       local fpath = assert(vim.fn.tempname()) .. ".cpp"
       lib.files.write(fpath, "TEST(Cached, First) {}\n")
